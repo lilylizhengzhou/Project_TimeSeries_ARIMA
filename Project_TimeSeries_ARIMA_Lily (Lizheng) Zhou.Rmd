@@ -1,0 +1,233 @@
+---
+title: "STA 9701 Project 1"
+author: "Lily (Lizheng) Zhou"
+date: "October 28, 2019"
+output:
+  pdf_document: 
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+Many of us may like to use `auto.arima()` function to fit best ARIMA model for univariate time series. This function returns a decent ARIMA model according to either AIC, AICc or BIC value. It is fast, easy and convenient to use, can provide us candidate models or give us suggestions of p and q values according to smallest AIC, AICc or BIC values. It saved much of our time. 
+
+However, I wonder if this function always provides well models. Imagine such a situation, if an original dataset has both seasonal pattern and other patterns, while seasonal pattern is not that strong, I am curious that whether `auto.arima()` would choose to keep seasonal pattern or not. 
+
+To further investigate this question, I need a seasonal dataset but this seasonality should not be that strong. 
+
+There is a great time series dataset package called "Time Series Data Library (tsdl)" (<https://pkg.yangzhuoranyang.com/tsdl/>), which contains a list of 648 time series datasets. I used a `for` loop to auto print the datasets, dataset attributes and plot the datasets. Finally, I found that the 97th dataset in the package fulfills my need. 
+
+```{r preparation, include=FALSE}
+# Load library
+library(forecast)
+library(astsa)
+library(tseries)
+library(tsdl)
+```
+
+# Exploratory Data Analysis 
+
+The 97th dataset of **tsdl** package is: Basic quarterly iron production in Australia: thousand tonnes from March 1956 to September 1994, giving a total of n = 155 observations. Source: Australian Bureau of Statistics (<https://www.abs.gov.au/>)
+
+```{r datasetplot, fig.height=6.06, fig.width=10, echo=FALSE}
+# Dataset plot
+par(mfrow=c(1,1))
+x = tsdl[[97]]
+autoplot(x,main='Quarterly Iron Production in Australia: Mar 1956 - Sep 1994')
+```
+
+When look at the plot of original data plot, we see that there is a seasonal pattern, wile this seasonality is not that strong, this satisfies my need. 
+
+The time series plot indicates that there are some the variance differences, so original may not be stationary. To investigate the required transformation, we use BoxCox procedure. `BoxCox.lambda()` function gives us lambda = `r BoxCox.lambda(x)` which is close to -0.5. Thus, we take 1 over square root transformation. 
+
+```{r Transformation, results=FALSE, echo=FALSE, fig.height=5, fig.width=10}
+# Transformation
+BoxCox.lambda(x)
+tx = 1/(sqrt(x))
+plot(tx,main='Transformed Original Data') 
+```
+
+Also took a first order diferencing according to the trend of original data. 
+
+```{r Differencing, echo=FALSE, fig.height=5, fig.width=10}
+# Differencing
+dtx = diff(tx) 
+plot(dtx,main='Differenced of Transformed Original Data')
+```
+
+To test if the differenced of transformed original data is stationary, use `adf.test()` function. 
+
+```{r adf test, echo=FALSE, message=FALSE, warning=FALSE}
+# adf test
+adf.test(dtx) 
+```
+
+From the result, we see it is stationary. Conbine with the plot shown above, I decide to use differenced of transformed original data (dtx) to do further analysis. 
+
+The sample ACF and sample PACF of differenced of the transformed data are
+shown below: 
+
+```{r ACF and PACF of dtx, echo=FALSE, fig.height=8, fig.width=10}
+# ACF and PACF of dtx
+par(mfrow=c(2,1))
+acf(dtx,155,main='ACF of differenced of transformed data')
+pacf(dtx,155,main='PACF of differenced of transformed data')
+```
+
+There is a seasonal pattern, while most are not significant, so I feel ACF and PACF all cut off actually. Thus, the ACF and PACF plots suggest a tentative model may be an AR(3), AR(4), MA(2), MA(4) of differenced of transformed data. 
+
+# ARIMA Modeling
+Fit 4 models: AR(3), AR(4), MA(2), MA(4) of differenced of transformed data, AIC and BIC shown below. 
+
+```{r fit the model and try AIC and BIC, include=FALSE}
+# ARIMA test
+ARIMA1 = arima(dtx, order=c(3,0,0))
+ARIMA2 = arima(dtx, order=c(4,0,0))
+ARIMA3 = arima(dtx, order=c(0,0,2))
+ARIMA4 = arima(dtx, order=c(0,0,4))
+# Check model AIC and BIC
+AIC(ARIMA1);BIC(ARIMA1)
+AIC(ARIMA2);BIC(ARIMA2)
+AIC(ARIMA3);BIC(ARIMA3)
+AIC(ARIMA4);BIC(ARIMA4)
+```
+
+::: l-body-outset
+|Model|AIC                     |BIC                     |
+|-----|------------------------|------------------------|
+|AR(3)|`r round(AIC(ARIMA1),3)`|`r round(BIC(ARIMA1),3)`| 
+|AR(4)|`r round(AIC(ARIMA2),3)`|`r round(BIC(ARIMA2),3)`| 
+|MA(2)|`r round(AIC(ARIMA3),3)`|`r round(BIC(ARIMA3),3)`| 
+|MA(4)|`r round(AIC(ARIMA4),3)`|`r round(BIC(ARIMA4),3)`| 
+:::
+
+we notice that AIC and BIC both are very close, respectively. I simply choose the smallest BIC here, so the model is AR(3) of differenced of transformed data. 
+
+At first, fit the AR(3) model of differenced of transformed data with constant, the estimated coeffcients and the corresponding p-values are given by `sarima()` function: 
+
+```{r AR3 with constant, include=FALSE}
+# AR3 with constant 
+summary(ARIMA1)
+sarima(dtx, 3,0,0)
+```
+
+::: l-body-outset
+| Parameter    | Estimate| Standard Error |t-value| p-value|
+|--------------|---------|--------|---------|--------|
+|$\hat{\phi_1}$| -0.3619 | 0.0780 | -4.6428 | 0.0000 |
+|$\hat{\phi_2}$| -0.3181 | 0.0788 | -4.0367 | 0.0001 |
+|$\hat{\phi_3}$| -0.2470 | 0.0777 | -3.1805 | 0.0018 |
+|$\hat{\mu}$   | -0.0001 | 0.0001 | -1.4597 | 0.1465 |
+:::
+
+Since the constant term is not significant, re-fit the model without constant. The following Table shows
+the parameter estimates of the model of AR(3) of differenced of transformed data without constant.
+
+```{r AR3 without constant, include=FALSE}
+# AR3 without constant 
+AR3_no_c = arima(dtx, order=c(3,0,0), include.mean=FALSE)
+summary(AR3_no_c)
+sarima(dtx, 3,0,0, no.constant=TRUE) 
+AIC(AR3_no_c);BIC(AR3_no_c)
+```
+
+::: l-body-outset
+| Parameter    | Estimate| Standard Error |t-value| p-value|
+|--------------|---------|--------|---------|--------|
+|$\hat{\phi_1}$| -0.3240 | 0.0787 | -4.1148 | 0.0001 |
+|$\hat{\phi_2}$| -0.2789 | 0.0796 | -3.5061 | 0.0006 |
+|$\hat{\phi_3}$| -0.2105 | 0.0785 | -2.6796 | 0.0082 |
+:::
+
+# `auto.arima()` Modeling
+Go back to the purpose of this project, I want to know if `auto.arima` function would always keep the seasonal pattern when seasonal pattern is not strong. Thus, use `auto.arima` function to get the model. 
+
+```{r auto.arima function, echo = FALSE} 
+# Use auto.arima function
+ARIMAfit_dtx = auto.arima(dtx, approximation=FALSE,trace=FALSE)
+summary(ARIMAfit_dtx) 
+```
+
+We see that although we already know that this dataset doesn't have strong seasonality pattern, but `auto.arima` function still chooses to provide us a seasonal model ARIMA(0,1,2)(1,0,0)[4]. 
+
+I will compare this seasonal model **ARIMA(0,1,2)(1,0,0)[4]** with the model **ARIMA(3,1,0) without constant** we fit manually. 
+
+# Model Comparison
+## AIC and BIC Comparison 
+we first compare the AIC and BIC of two models. 
+
+```{r AIC BIC compare, include=FALSE}
+# AR3 without constant 
+AIC(AR3_no_c);BIC(AR3_no_c) 
+# ARIMA(0,1,2)(1,0,0)[4] 
+AIC(ARIMAfit_dtx);BIC(ARIMAfit_dtx)
+```
+
+::: l-body-outset
+| Model                         | AIC                            | BIC                            |
+|-------------------------------|--------------------------------|--------------------------------|
+| ARIMA(3,1,0) without constant | `r round(AIC(AR3_no_c),3)`     | `r round(BIC(AR3_no_c),3)`     |
+| ARIMA(0,1,2)(1,0,0)[4]        | `r round(AIC(ARIMAfit_dtx),3)` | `r round(BIC(ARIMAfit_dtx),3)` | 
+:::
+
+I feel that two models' AIC and BIC are still very close, respectively. 
+
+## Diagnostic Checking and Comparing 
+Then, compare the diagnostic plots two models. Diagnostic plots shown below: 
+
+```{r Compare Diagnostic plots, message=FALSE, warning=FALSE, echo=FALSE, results=FALSE} 
+# Compare Diagnostic plots
+sarima(dtx, 3,0,0, no.constant=TRUE)
+sarima(dtx, 0,0,2, 1,0,0, 4)
+```
+
+Look at the two diagnostic plots, we see that: **Standardized Residuals** totally same; **ACF of Residuals** are all not significant far away from 0; **Normal Q-Q Plot of Std Residuals** look similar, most parts are ok while all have outliers because of 1980s; **p values for Ljung-Box statistic** have no problems, all significant. 
+
+Thus, two diagnostic plots of two models also are very similar and satisfying. 
+
+## Forecasting Comparison 
+I use the two models to forecast the differenced of transformed data for next 4 quarters.
+
+**ARIMA(3,1,0) without constant** forecasting plot: 
+
+```{r Forecasting Comparison AR3, message=FALSE, warning=FALSE, echo=FALSE, results=FALSE, fig.height=3.7, fig.width=10} 
+# AR(3) forecasting
+sarima.for(dtx, 4, 3,0,0, no.constant=TRUE)
+```
+
+**ARIMA(0,1,2)(1,0,0)[4]** forecasting plot: 
+
+```{r Forecasting Comparison Seasonal model, message=FALSE, warning=FALSE, echo=FALSE, results=FALSE, fig.height=3.7, fig.width=10} 
+# ARIMA(0,1,2)(1,0,0)[4] forecasting
+sarima.for(dtx, 4, 0,0,2, 1,0,0, 4)
+```
+
+Compare with forecasting of two models, I found that they are still very close, magnitudes are both very small. 
+
+I compared the AIC, BIC, diagnostic plots, forecasting of two models, I feel it is not necessary to keep the seasonal pattern for this dataset, the model `auto.arima()` function provides is kind of complex, AR model is enough. 
+
+# Conclusion 
+From this proect, I used a seasonal dataset while seasonality is not strong to do a standard arima model building and get an AR model, later compare with the seasonal model got from `auto.arima()` function. By comparing with the AIC, BIC, diagnostic plots and forecasting of two models, I feel that we don't have to keep seasona pattern for this mode, thus I feel `auto.arima()` function might not always provide the most appropriate and simplest model. 
+
+# Appendix 
+## Dataset 
+
+```{r dataset, echo=FALSE}
+# Dataset
+x
+```
+
+## Dataset Attribute 
+
+```{r Attribute, echo=FALSE}
+# Dataset Attribute
+attributes(x) 
+```
+
+## R Code
+
+```{r ref.label=knitr::all_labels(), echo = TRUE, eval = FALSE}
+```
